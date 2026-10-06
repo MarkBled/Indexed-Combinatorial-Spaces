@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>400 Students – Index Space and Conflicts (v13)</title>
+<style>
+  :root{--ink:#2c3e50;--muted:#5d6d7e;--bg:#f5f7fa;--card:#fff;--blue:#3498db;--red:#c0392b;--green:#27ae60;--orange:#e67e22}
+  body{font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;max-width:1200px;margin:0 auto;padding:20px;background:var(--bg);color:var(--ink)}
+  .card{background:var(--card);border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,.05);padding:25px;margin-bottom:25px}
+  h1{color:#1a5276;margin-top:0;border-bottom:3px solid var(--blue);padding-bottom:10px}
+  h2{color:#1a5276;margin-top:0}
+  .info-box{background:#eaf2f8;border-left:5px solid var(--blue);padding:15px;font-size:.95rem;line-height:1.6;margin-bottom:20px}
+  .warn-box{background:#fef5e7;border-left:5px solid var(--orange);padding:15px;font-size:.95rem;line-height:1.6;margin:15px 0}
+  .big-number{font-family:'Courier New',monospace;font-weight:bold;color:var(--red);background:#f9ebea;padding:10px;border-radius:6px;margin-top:5px;display:block;word-wrap:break-word;line-height:1.4}
+  .sci{font-family:monospace;font-weight:bold;color:var(--green);background:#e8f8f5;padding:2px 6px;border-radius:4px}
+  .tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:15px}
+  .tab{padding:10px 18px;border-radius:6px;border:2px solid #bdc3c7;background:#fff;cursor:pointer;font-weight:bold}
+  .tab.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+  .matrix-container{background:#2c3e50;color:#ecf0f1;padding:15px;border-radius:8px;font-family:'Courier New',monospace;font-size:.85rem;margin-top:15px;border-left:5px solid var(--orange);word-wrap:break-word}
+  .matrix-row{margin:6px 0;line-height:1.4}
+  .ml{color:#f1c40f;font-weight:bold}.mv{color:#2ecc71;font-weight:bold}
+  label{font-weight:bold;display:block;margin:12px 0 6px}
+  input[type=text],textarea,select{width:100%;max-width:700px;padding:10px;font-size:1rem;border:2px solid #bdc3c7;border-radius:6px;box-sizing:border-box;font-family:monospace}
+  textarea{height:90px}
+  .btn{color:#fff;border:none;padding:10px 20px;font-size:1rem;border-radius:6px;cursor:pointer;margin:10px 10px 0 0}
+  .b-blue{background:var(--blue)}.b-green{background:var(--green)}.b-orange{background:var(--orange)}.b-grey{background:#7f8c8d}.b-red{background:var(--red)}
+  .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;background:#fcf8e3;border:1px solid #fbeed5;padding:15px;border-radius:6px;margin:15px 0}
+  .mval{font-weight:bold;color:#b94a48}
+  .room-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-top:15px}
+  .room{border-radius:8px;padding:12px;font-family:monospace;font-size:.82rem;box-shadow:0 2px 5px rgba(0,0,0,.05)}
+  .rb{border-left:5px solid var(--blue);background:#f4f9fd}.rg{border-left:5px solid #e74c3c;background:#fdf5f4}
+  .rbad{outline:3px solid var(--red)}
+  .rh{font-weight:bold;margin-bottom:6px}
+  table{border-collapse:collapse;width:100%;font-size:.92rem;margin-top:10px}
+  th,td{border:1px solid #d5dbdb;padding:6px 8px;text-align:right}
+  th{background:#eaf2f8}td:first-child,th:first-child{text-align:left}
+  .ok{color:var(--green);font-weight:bold}.bad{color:var(--red);font-weight:bold}
+  .err{color:var(--red);font-weight:bold;margin-top:10px}
+  .small{font-size:.85rem;color:var(--muted)}
+  code{background:#eef2f5;padding:1px 4px;border-radius:3px}
+</style>
+</head>
+<body>
+
+<div class="card">
+  <h1>🏠 400 Students – Index Space, Exact Counting and Conflicts (v13)</h1>
+  <div class="info-box">
+    <strong>Problem:</strong> 200 boys and 200 girls are placed into 100 rooms of 4. Boys and girls never share a room; boy-rooms and girl-rooms may interleave in any order across Ro-1 … Ro-100.<br><br>
+    Every integer index between 1 and N is decoded directly (<em>unranking</em>) into exactly one arrangement, without enumerating the others. This page has two index spaces:
+    <ul>
+      <li><strong>Structured (v12):</strong> students → pairs → two pairs per room, rooms in canonical order. Total <span class="sci" id="nS">…</span>. One room occupancy is reached by 3 different pairings, and room numbers are not permuted, so this counts <em>structured configurations</em>, not distinct room occupancies.</li>
+      <li><strong>Unique occupancy (new):</strong> every index gives a different assignment of students to numbered rooms, and every such assignment has exactly one index. Total <span class="sci" id="nU">…</span>.</li>
+    </ul>
+    Ratio unique / structured ≈ <span class="sci" id="ratio">…</span> (= 50!·50! room orders gained ÷ 3¹⁰⁰ pairings removed).
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" id="tab-u" onclick="setMode('U')">Unique occupancy (exact, with conflicts)</button>
+    <button class="tab" id="tab-s" onclick="setMode('S')">Structured pairs (v12)</button>
+  </div>
+
+  <div><strong>Total N in the selected space:</strong><span class="big-number" id="nTotal">…</span></div>
+
+  <label for="q">Index (1 … N)</label>
+  <input type="text" id="q" placeholder="Enter a positive integer, or press Random">
+  <br>
+  <button class="btn b-blue" onclick="runQuery()">Decode index</button>
+  <button class="btn b-green" onclick="randomQuery()">Random index</button>
+  <button class="btn b-grey" onclick="clearAll()">Clear</button>
+  <div class="err" id="err"></div>
+
+  <div class="metrics">
+    <div>Decode time: <span class="mval" id="tq">–</span> ms</div>
+    <div>Rule check time: <span class="mval" id="tc">–</span> ms</div>
+    <div>Status: <span class="mval" id="st">waiting</span></div>
+  </div>
+</div>
+
+<div class="card" id="conflict-card">
+  <h2>Conflict rules: students who must not share a room</h2>
+  <div class="info-box">
+    Each line is one forbidden pair, e.g. <code>St-1-B, St-2-B</code>. Only same-gender pairs matter (different genders never share a room anyway).<br>
+    With conflicts, some indices become <em>invalid</em>. The question is how to reach a <em>valid</em> index without trying them one by one. Two methods are offered below:
+    <ul>
+      <li><strong>Naive scan:</strong> try index+1, index+2, … The last digits change only the last rooms, so a conflict in an early room survives an astronomically long run of indices.</li>
+      <li><strong>Block skip (backtracking):</strong> find the first room that contains a conflict and jump over the <em>whole block</em> of indices that share that room. This is classic backtracking search expressed with indices: fast when conflicts are sparse, exponential in the worst case.</li>
+    </ul>
+  </div>
+  <label for="conf">Forbidden pairs</label>
+  <textarea id="conf" placeholder="St-1-B, St-2-B&#10;St-201-G, St-202-G"></textarea>
+  <label for="kconf">Random conflicts to generate</label>
+  <select id="kconf">
+    <option value="10">10 pairs (sparse)</option>
+    <option value="100" selected>100 pairs</option>
+    <option value="1000">1 000 pairs</option>
+    <option value="5000">5 000 pairs (dense)</option>
+  </select>
+  <br>
+  <button class="btn b-orange" onclick="genConflicts()">Generate random conflicts</button>
+  <button class="btn b-blue" onclick="estimateValid()">Estimate valid fraction (2 000 random indices)</button>
+  <button class="btn b-grey" onclick="naiveScan()">Naive scan → next valid (max 20 000 steps)</button>
+  <button class="btn b-green" onclick="blockSkip()">Block skip → next valid</button>
+  <div id="conf-out" class="metrics" style="display:block"></div>
+</div>
+
+<div class="card">
+  <h2>Decoder output (counter digits)</h2>
+  <div id="matrix" class="matrix-container">Waiting…</div>
+</div>
+
+<div class="card">
+  <h2>Arrangement</h2>
+  <div id="title" class="small">Use the form above.</div>
+  <div class="room-grid" id="grid"></div>
+</div>
+
+<div class="card">
+  <h2>Small exact lab: where counting becomes hard</h2>
+  <div class="info-box">
+    Removing forbidden pairs from the pair triangle is easy: the triangle has <code>n(n−1)/2 − k</code> allowed pairs. Hard is the next step: <strong>how many complete arrangements</strong> can be built only from allowed pairs. Exact unranking needs exactly these counts (the block sizes), and they are no longer equal for every branch.
+    <ul>
+      <li><strong>Pairs only</strong> (perfect matchings avoiding forbidden pairs): checking that <em>one</em> exists is polynomial (Edmonds' algorithm), but <em>counting</em> them is #P-complete in general (Valiant 1979).</li>
+      <li><strong>Rooms of 4</strong> with forbidden pairs inside a room: even deciding whether <em>one</em> valid arrangement exists is NP-complete in general (partition into groups of a fixed size ≥ 3).</li>
+    </ul>
+    The table counts exactly with dynamic programming over subsets (memory and time ≈ 2ⁿ). Watch the time column as n grows.
+  </div>
+  <label for="dens">Conflict density (probability that a pair is forbidden)</label>
+  <select id="dens">
+    <option value="0.05">5 %</option><option value="0.15" selected>15 %</option><option value="0.3">30 %</option><option value="0.5">50 %</option>
+  </select>
+  <br><button class="btn b-blue" onclick="runLab()">Run growth experiment</button>
+  <div id="lab"></div>
+</div>
+
+<script>
+// ===================== core (no DOM) =====================
+const NB = 200, NG = 200, ROOMS = 100, PER = 4, BR = 50, GR = 50;
+const BOYS = [], GIRLS = [];
+for (let i = 1; i <= NB; i++) BOYS.push(`St-${i}-B`);
+for (let i = 1; i <= NG; i++) GIRLS.push(`St-${i + 200}-G`);
+
+function binom(n, k) {               // BigInt
+  n = BigInt(n); k = BigInt(k);
+  if (k < 0n || k > n) return 0n;
+  if (k > n - k) k = n - k;
+  let r = 1n;
+  for (let i = 1n; i <= k; i++) r = r * (n - k + i) / i;
+  return r;
+}
+function binomN(n, k) {              // Number, exact for our sizes (≤ C(200,4))
+  if (k < 0 || k > n) return 0;
+  let r = 1;
+  for (let i = 1; i <= k; i++) r = r * (n - k + i) / i;
+  return Math.round(r);
+}
+function dfact(n) { let r = 1n; for (let i = BigInt(n) - 1n; i > 0n; i -= 2n) r *= i; return r; }
+function sci(b) { const s = b.toString(); return s.length <= 6 ? s : `${s[0]}.${s.slice(1, 6)} × 10^${s.length - 1}`; }
+
+// ---- interleave (which of the 100 rooms are boy rooms) ----
+const INTER = binom(ROOMS, BR);
+function unrankInterleave(rank) {
+  const pat = []; let n = ROOMS, k = BR, r = rank;
+  for (let i = 0; i < ROOMS; i++) {
+    const ways = binom(n - 1, k - 1);
+    if (k > 0 && r < ways) { pat.push('B'); k--; } else { pat.push('G'); if (k > 0) r -= ways; }
+    n--;
+  }
+  return pat;
+}
+
+// ---- structured space (v12) ----
+const M200 = dfact(200), M100 = dfact(100);
+const SX = M200 * M100, SY = M200 * M100;
+const N_S = SX * SY * INTER;
+function unrankMatching(v, rank) {
+  const out = []; let vs = v.slice(), r = rank;
+  while (vs.length) {
+    const block = dfact(vs.length - 2);
+    const p = Number(r / block); r %= block;
+    const a = vs[0], b = vs[1 + p];
+    out.push([a, b]);
+    vs = vs.filter(x => x !== a && x !== b);
+  }
+  return out;
+}
+function decodeStructured(q) {
+  let idx = q - 1n;
+  const ri = idx % INTER; let rest = idx / INTER;
+  const bfull = rest % SX, gfull = rest / SX;
+  const d = { inter: ri, bPairs: bfull / M100, bRooms: bfull % M100, gPairs: gfull / M100, gRooms: gfull % M100 };
+  const pat = unrankInterleave(ri);
+  const pb = unrankMatching(BOYS, d.bPairs), pg = unrankMatching(GIRLS, d.gPairs);
+  const rb = unrankMatching(pb.map((_, i) => i), d.bRooms), rg = unrankMatching(pg.map((_, i) => i), d.gRooms);
+  let bi = 0, gi = 0; const rooms = [];
+  for (let r = 0; r < ROOMS; r++) {
+    if (pat[r] === 'B') { const [x, y] = rb[bi++]; rooms.push({ id: r + 1, g: 'B', pairs: [pb[x], pb[y]] }); }
+    else { const [x, y] = rg[gi++]; rooms.push({ id: r + 1, g: 'G', pairs: [pg[x], pg[y]] }); }
+  }
+  rooms.forEach(o => o.students = o.pairs.flat());
+  return { rooms, digits: d };
+}
+
+// ---- unique-occupancy space (new, exact bijection) ----
+// gender block: room t (t = 0..49) chooses a 4-subset of the remaining 200-4t students; radix R_t = C(200-4t, 4)
+const RADIX = [], PLACE = [];          // PLACE[t] = product of RADIX[u] for u > t (BigInt)
+for (let t = 0; t < BR; t++) RADIX.push(binomN(NB - PER * t, PER));
+{ let p = 1n; for (let t = BR - 1; t >= 0; t--) { PLACE[t] = p; p *= BigInt(RADIX[t]); } }
+const GB = PLACE[0] * BigInt(RADIX[0]); // = 200! / (4!)^50
+const N_U = INTER * GB * GB;
+
+function unrankComb(m, k, r) {         // lexicographic k-subset of {0..m-1}, rank r (Number)
+  const out = []; let x = 0;
+  for (let left = k; left > 0; left--) {
+    while (true) {
+      const c = binomN(m - x - 1, left - 1);
+      if (r < c) { out.push(x); x++; break; }
+      r -= c; x++;
+    }
+  }
+  return out;
+}
+function rankComb(m, k, sub) {         // inverse of unrankComb
+  let r = 0, x = 0;
+  for (let i = 0; i < k; i++) {
+    for (; x < sub[i]; x++) r += binomN(m - x - 1, k - i - 1);
+    x = sub[i] + 1;
+  }
+  return r;
+}
+function digitsOf(idx) {               // BigInt gender index -> 50 digits (room 1 most significant)
+  const d = [];
+  for (let t = 0; t < BR; t++) { d.push(Number(idx / PLACE[t])); idx %= PLACE[t]; }
+  return d;
+}
+function indexOf(d) { let s = 0n; for (let t = 0; t < BR; t++) s += BigInt(d[t]) * PLACE[t]; return s; }
+function roomsFromDigits(names, d) {   // returns list of 50 rooms (arrays of names)
+  let pool = names.slice(); const rooms = [];
+  for (let t = 0; t < BR; t++) {
+    const pick = unrankComb(pool.length, PER, d[t]);
+    rooms.push(pick.map(i => pool[i]));
+    const set = new Set(pick); pool = pool.filter((_, i) => !set.has(i));
+  }
+  return rooms;
+}
+function splitU(q) {
+  const idx = q - 1n;
+  return { inter: idx % INTER, b: (idx / INTER) % GB, g: idx / INTER / GB };
+}
+function joinU(inter, b, g) { return (g * GB + b) * INTER + inter + 1n; }
+function decodeUnique(q) {
+  const s = splitU(q);
+  const db = digitsOf(s.b), dg = digitsOf(s.g);
+  const pat = unrankInterleave(s.inter);
+  const RB = roomsFromDigits(BOYS, db), RG = roomsFromDigits(GIRLS, dg);
+  let bi = 0, gi = 0; const rooms = [];
+  for (let r = 0; r < ROOMS; r++) {
+    if (pat[r] === 'B') rooms.push({ id: r + 1, g: 'B', students: RB[bi++] });
+    else rooms.push({ id: r + 1, g: 'G', students: RG[gi++] });
+  }
+  return { rooms, digits: { inter: s.inter, db, dg }, s };
+}
+
+// ---- conflicts ----
+let CONF = new Map();                  // name -> Set(names)
+function parseConflicts(text) {
+  const m = new Map(); let n = 0;
+  for (const line of text.split(/\n/)) {
+    const p = line.split(/[,;\s]+/).map(x => x.trim()).filter(Boolean);
+    if (p.length !== 2 || p[0] === p[1]) continue;
+    for (const [a, b] of [[p[0], p[1]], [p[1], p[0]]]) { if (!m.has(a)) m.set(a, new Set()); m.get(a).add(b); }
+    n++;
+  }
+  return { map: m, n };
+}
+function roomBad(students) {
+  for (let i = 0; i < students.length; i++) {
+    const s = CONF.get(students[i]); if (!s) continue;
+    for (let j = i + 1; j < students.length; j++) if (s.has(students[j])) return [students[i], students[j]];
+  }
+  return null;
+}
+function checkRooms(rooms) {
+  const seen = new Set(); let bad = [];
+  for (const r of rooms) {
+    if (r.students.length !== PER) return { ok: false, msg: 'room size is not 4' };
+    for (const s of r.students) {
+      if (!s.endsWith('-' + r.g)) return { ok: false, msg: 'gender mixing' };
+      seen.add(s);
+    }
+    const c = roomBad(r.students); if (c) bad.push({ room: r.id, pair: c });
+  }
+  if (seen.size !== NB + NG) return { ok: false, msg: 'missing or duplicate students' };
+  return { ok: bad.length === 0, bad, msg: bad.length ? `${bad.length} room(s) violate conflict rules` : 'all rules satisfied' };
+}
+// first bad room inside one gender block (by block order t), or -1
+function firstBad(names, d) {
+  let pool = names.slice();
+  for (let t = 0; t < BR; t++) {
+    const pick = unrankComb(pool.length, PER, d[t]);
+    if (roomBad(pick.map(i => pool[i]))) return t;
+    const set = new Set(pick); pool = pool.filter((_, i) => !set.has(i));
+  }
+  return -1;
+}
+// block skip within one gender: smallest digit vector >= d (lexicographic) with no bad room
+function nextValidDigits(names, d, maxSteps) {
+  d = d.slice(); let steps = 0;
+  while (steps < maxSteps) {
+    const t = firstBad(names, d); steps++;
+    if (t < 0) return { d, steps, found: true };
+    let u = t;                                        // increment digit t, zero the rest, carry left
+    for (let v = t + 1; v < BR; v++) d[v] = 0;
+    while (u >= 0) { d[u]++; if (d[u] < RADIX[u]) break; d[u] = 0; u--; }
+    if (u < 0) return { d, steps, found: false, exhausted: true };
+  }
+  return { d, steps, found: false };
+}
+
+// exact next valid global index >= q (validity does not depend on the interleave digit)
+function nextValidIndex(s, maxSteps) {
+  let steps = 0;
+  const g0 = digitsOf(s.g), b0 = digitsOf(s.b);
+  let rg = nextValidDigits(GIRLS, g0, maxSteps); steps += rg.steps;
+  if (!rg.found) return { found: false, steps, exhausted: rg.exhausted };
+  const gSame = rg.d.join() === g0.join();
+  let rb = nextValidDigits(BOYS, gSame ? b0 : new Array(BR).fill(0), maxSteps - steps); steps += rb.steps;
+  if (!rb.found && rb.exhausted && gSame) {              // no valid boys >= b: move to next valid girls block
+    const g1 = indexOf(g0) + 1n; if (g1 >= GB) return { found: false, steps, exhausted: true };
+    rg = nextValidDigits(GIRLS, digitsOf(g1), maxSteps - steps); steps += rg.steps;
+    if (!rg.found) return { found: false, steps, exhausted: rg.exhausted };
+    rb = nextValidDigits(BOYS, new Array(BR).fill(0), maxSteps - steps); steps += rb.steps;
+    return rb.found ? { found: true, steps, q: joinU(0n, indexOf(rb.d), indexOf(rg.d)) } : { found: false, steps, exhausted: rb.exhausted };
+  }
+  if (!rb.found) return { found: false, steps, exhausted: rb.exhausted };
+  const same = gSame && rb.d.join() === b0.join();
+  return { found: true, steps, q: joinU(same ? s.inter : 0n, indexOf(rb.d), indexOf(rg.d)) };
+}
+
+// ---- small exact lab: subset DP ----
+function rng(seed) { return () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; }; }
+function labCount(n, forb, size) {     // size 2 = pairs, 4 = rooms
+  const memo = new Map(); const full = (1 << n) - 1; let states = 0;
+  function f(mask) {
+    if (mask === full) return 1n;
+    if (memo.has(mask)) return memo.get(mask);
+    states++;
+    let i = 0; while (mask >> i & 1) i++;
+    const free = []; for (let j = i + 1; j < n; j++) if (!(mask >> j & 1) && !forb[i][j]) free.push(j);
+    let s = 0n;
+    if (size === 2) for (const j of free) s += f(mask | 1 << i | 1 << j);
+    else for (let a = 0; a < free.length; a++) for (let b = a + 1; b < free.length; b++) {
+      if (forb[free[a]][free[b]]) continue;
+      for (let c = b + 1; c < free.length; c++) {
+        if (forb[free[a]][free[c]] || forb[free[b]][free[c]]) continue;
+        s += f(mask | 1 << i | 1 << free[a] | 1 << free[b] | 1 << free[c]);
+      }
+    }
+    memo.set(mask, s); return s;
+  }
+  const t0 = (typeof performance !== 'undefined' ? performance : Date).now();
+  const c = f(0);
+  return { count: c, states, ms: (typeof performance !== 'undefined' ? performance : Date).now() - t0 };
+}
+function allRooms(n) { let r = 1n; for (let m = n; m > 0; m -= 4) r *= binom(m - 1, 3); return r; }
+
+if (typeof module !== 'undefined') module.exports = { binom, binomN, unrankComb, rankComb, digitsOf, indexOf, roomsFromDigits,
+  decodeUnique, decodeStructured, checkRooms, parseConflicts, nextValidDigits, nextValidIndex, firstBad, PLACE, labCount, allRooms, dfact,
+  N_U, N_S, GB, INTER, RADIX, splitU, joinU, BOYS, GIRLS, setConf: m => { CONF = m; } };
+
+// ===================== UI =====================
+if (typeof document !== 'undefined') {
+  let MODE = 'U', LAST = null;
+  const $ = id => document.getElementById(id);
+  $('nS').textContent = sci(N_S); $('nU').textContent = sci(N_U);
+  { const s = N_U.toString().length - N_S.toString().length; $('ratio').textContent = `≈ 10^${s}`; }
+
+  window.setMode = m => {
+    MODE = m; $('tab-u').classList.toggle('active', m === 'U'); $('tab-s').classList.toggle('active', m === 'S');
+    $('nTotal').textContent = (m === 'U' ? N_U : N_S).toString();
+    $('conflict-card').style.opacity = m === 'U' ? 1 : .45;
+    clearAll();
+  };
+
+  function readConf() { const p = parseConflicts($('conf').value); CONF = p.map; return p.n; }
+  function randBig(max) { let s = ''; const L = max.toString().length + 5; for (let i = 0; i < L; i++) s += Math.floor(Math.random() * 10); return BigInt(s) % max + 1n; }
+
+  window.clearAll = () => {
+    $('q').value = ''; $('matrix').textContent = 'Waiting…'; $('title').textContent = 'Use the form above.';
+    $('grid').innerHTML = ''; $('tq').textContent = '–'; $('tc').textContent = '–'; $('st').textContent = 'waiting'; $('err').textContent = '';
+  };
+  window.randomQuery = () => { $('q').value = randBig(MODE === 'U' ? N_U : N_S).toString(); runQuery(); };
+
+  function show(q, res, chk, tq, tc) {
+    $('tq').textContent = tq.toFixed(3); $('tc').textContent = tc.toFixed(3);
+    $('st').innerHTML = chk.ok ? `<span class="ok">✓ ${chk.msg}</span>` : `<span class="bad">✗ ${chk.msg}</span>`;
+    const d = res.digits;
+    $('matrix').innerHTML = MODE === 'U'
+      ? `<div class="matrix-row"><span class="ml">interleave digit:</span> <span class="mv">${d.inter}</span></div>
+         <div class="matrix-row"><span class="ml">boy-room digits (radix C(200−4t,4), room 1 first):</span> <span class="mv">[${d.db.join(', ')}]</span></div>
+         <div class="matrix-row"><span class="ml">girl-room digits:</span> <span class="mv">[${d.dg.join(', ')}]</span></div>`
+      : `<div class="matrix-row"><span class="ml">m5 interleave:</span> <span class="mv">${d.inter}</span></div>
+         <div class="matrix-row"><span class="ml">m4 boys room grouping:</span> <span class="mv">${d.bRooms}</span></div>
+         <div class="matrix-row"><span class="ml">m3 boys pair matching:</span> <span class="mv">${d.bPairs}</span></div>
+         <div class="matrix-row"><span class="ml">m2 girls room grouping:</span> <span class="mv">${d.gRooms}</span></div>
+         <div class="matrix-row"><span class="ml">m1 girls pair matching:</span> <span class="mv">${d.gPairs}</span></div>`;
+    $('title').innerHTML = `Index: <code style="word-break:break-all">${q}</code>`;
+    const badRooms = new Set((chk.bad || []).map(b => b.room));
+    $('grid').innerHTML = res.rooms.map(r => {
+      const body = r.pairs ? r.pairs.map(p => `(${p[0]}, ${p[1]})`).join(' + ') : r.students.join(', ');
+      return `<div class="room ${r.g === 'B' ? 'rb' : 'rg'} ${badRooms.has(r.id) ? 'rbad' : ''}"><div class="rh">Ro-${r.id} (${r.g === 'B' ? 'Boys' : 'Girls'})${badRooms.has(r.id) ? ' ⚠ conflict' : ''}</div>${body}</div>`;
+    }).join('');
+  }
+
+  window.runQuery = () => {
+    $('err').textContent = '';
+    const s = $('q').value.replace(/\s+/g, '');
+    if (!/^\d+$/.test(s)) { $('err').textContent = 'Please enter a positive integer.'; return; }
+    const q = BigInt(s), N = MODE === 'U' ? N_U : N_S;
+    if (q < 1n || q > N) { $('err').textContent = 'Index outside [1, N].'; return; }
+    if (MODE === 'U') readConf(); else CONF = new Map();
+    const t0 = performance.now(); const res = MODE === 'U' ? decodeUnique(q) : decodeStructured(q); const t1 = performance.now();
+    const chk = checkRooms(res.rooms); const t2 = performance.now();
+    LAST = { q, res }; show(q, res, chk, t1 - t0, t2 - t1);
+  };
+
+  window.genConflicts = () => {
+    const k = +$('kconf').value, lines = new Set();
+    while (lines.size < k) {
+      const g = Math.random() < .5 ? BOYS : GIRLS; const a = Math.floor(Math.random() * 200), b = Math.floor(Math.random() * 200);
+      if (a !== b) lines.add([g[Math.min(a, b)], g[Math.max(a, b)]].join(', '));
+    }
+    $('conf').value = [...lines].join('\n');
+    $('conf-out').innerHTML = `${k} random same-gender conflicts generated. Decode or search to apply them.`;
+  };
+
+  window.estimateValid = () => {
+    if (MODE !== 'U') return; const n = readConf(); let ok = 0; const T = 2000; const t0 = performance.now();
+    for (let i = 0; i < T; i++) if (checkRooms(decodeUnique(randBig(N_U)).rooms).ok) ok++;
+    const f = ok / T, dt = performance.now() - t0;
+    const logN = N_U.toString().length - 1 + Math.log10(+('0.' + N_U.toString().slice(0, 15)) * 10);
+    const est = f > 0 ? `≈ ${(f * 100).toFixed(1)} % of N, i.e. about 10^${(Math.log10(f) + logN).toFixed(1)} valid indices`
+                      : `fewer than 1 in ${T}: valid indices are too rare to estimate by sampling`;
+    $('conf-out').innerHTML = `<b>${n}</b> conflict pairs · ${ok} / ${T} random indices valid · ${est} · ${dt.toFixed(0)} ms.<br>
+      <span class="small">Exact counting of valid indices is not done here: in general it is #P-hard (see the lab below).</span>`;
+  };
+
+  window.naiveScan = () => {
+    if (MODE !== 'U' || !LAST) { $('conf-out').textContent = 'Decode an index first (unique mode).'; return; }
+    readConf(); let q = LAST.q; const t0 = performance.now(); let steps = 0;
+    while (steps < 20000 && q <= N_U) { if (checkRooms(decodeUnique(q).rooms).ok) break; q++; steps++; }
+    const dt = performance.now() - t0, found = steps < 20000 && q <= N_U;
+    $('conf-out').innerHTML = found
+      ? `Naive scan found a valid index after <b>${steps}</b> steps (${dt.toFixed(0)} ms). Try more conflicts to see it get stuck.`
+      : `Naive scan: <b>no valid index in 20 000 steps</b> (${dt.toFixed(0)} ms). The scan changes the least significant digits first (interleave, then the last rooms). The conflicting room stays the same for a block of ≈ 10^${blockExp(LAST.q)} consecutive indices.`;
+    if (found) { $('q').value = q.toString(); runQuery(); }
+  };
+  function blockExp(q) {               // size of the index block that shares the first bad room
+    const s = splitU(q); const tg = firstBad(GIRLS, digitsOf(s.g)), tb = firstBad(BOYS, digitsOf(s.b));
+    const lg = x => x.toString().length - 1;
+    if (tg >= 0) return lg(PLACE[tg] * GB * INTER);
+    if (tb >= 0) return lg(PLACE[tb] * INTER);
+    return 0;
+  }
+  window.blockSkip = () => {
+    if (MODE !== 'U' || !LAST) { $('conf-out').textContent = 'Decode an index first (unique mode).'; return; }
+    readConf(); const t0 = performance.now(); const s = splitU(LAST.q);
+    const r = nextValidIndex(s, 200000); const dt = performance.now() - t0;
+    if (!r.found) {
+      $('conf-out').innerHTML = `Block skip stopped after ${r.steps} checks without a valid arrangement (${dt.toFixed(0)} ms). ${r.exhausted ? 'No valid arrangement exists after this index.' : 'With dense conflicts the search tree explodes – this is the NP-hard side.'}`;
+      return;
+    }
+    const gap = r.q - LAST.q;
+    $('conf-out').innerHTML = gap === 0n ? `The current index is already valid (${r.steps} checks).` :
+      `Block skip found the <b>next valid index</b> in <b>${r.steps}</b> checks (${dt.toFixed(1)} ms).<br>
+      Indices skipped: <code style="word-break:break-all">${gap}</code> (≈ 10^${gap.toString().length - 1}).`;
+    $('q').value = r.q.toString(); runQuery();
+  };
+
+  window.runLab = () => {
+    const p = +$('dens').value; const r = rng(12345); let rows = '';
+    for (const n of [8, 12, 16, 20, 24]) {
+      const forb = Array.from({ length: n }, () => Array(n).fill(false));
+      for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) if (r() < p) forb[i][j] = forb[j][i] = true;
+      const m = labCount(n, forb, 2), all = dfact(n);
+      let roomCell = '<td colspan="3" class="small">skipped (too slow)</td>';
+      if (n <= 16) { const q = labCount(n, forb, 4); roomCell = `<td>${q.count}</td><td>${allRooms(n)}</td><td>${q.ms.toFixed(1)}</td>`; }
+      rows += `<tr><td>${n}</td><td>${m.count}</td><td>${all}</td><td>${m.states}</td><td>${m.ms.toFixed(1)}</td>${roomCell}</tr>`;
+    }
+    $('lab').innerHTML = `<table><tr><th>students n</th><th>valid pairings</th><th>all pairings (n−1)!!</th><th>DP states</th><th>ms</th>
+      <th>valid rooms of 4</th><th>all rooms of 4</th><th>ms</th></tr>${rows}</table>
+      <p class="small">States and time grow roughly ×2ⁿ. For 200 students the same exact count would need ≈ 2²⁰⁰ ≈ 10⁶⁰ states. No known method counts general constraint sets in polynomial time.</p>`;
+  };
+  setMode('U');
+}
+</script>
+</body>
+</html>
